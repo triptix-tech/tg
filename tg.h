@@ -11,6 +11,10 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /// The base point type used for all geometries.
 /// @see PointFuncs
 struct tg_point {
@@ -343,5 +347,8 @@ void tg_env_set_index(enum tg_index ix);
 void tg_env_set_index_spread(int spread);
 /// @}
 
+#ifdef __cplusplus
+}
+#endif
 
 #endif // TG_H
