@@ -316,7 +316,7 @@ bool tg_poly_intersects_line(const struct tg_poly *a, const struct tg_line *b);
 bool tg_poly_intersects_poly(const struct tg_poly *a, const struct tg_poly *b);
 bool tg_geom_intersects_point(const struct tg_geom *a, struct tg_point b);
 
-static_assert(sizeof(int) == 4 || sizeof(int) == 8,  "invalid int size");
+// static_assert(sizeof(int) == 4 || sizeof(int) == 8,  "invalid int size");
 
 // Function attribute for noinline.
 #if defined(__GNUC__)
