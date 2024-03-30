@@ -4,6 +4,9 @@
 // Use of this source code is governed by an MIT-style
 // license that can be found in the LICENSE file.
 
+#if _WIN32
+#define _USE_MATH_DEFINES
+#endif
 #include <math.h>
 #include <float.h>
 #include <stdarg.h>
@@ -63,7 +66,11 @@ static int rc_add(rc_t *rc) {
     return fetch;
 }
 #else
+#ifdef _WIN32
+#include "./msvc-compat/stdatomic.h"
+#else
 #include <stdatomic.h>
+#endif
 typedef atomic_int rc_t;
 static int rc_sub(rc_t *rc) {
     return atomic_fetch_sub(rc, 1);
@@ -578,7 +585,7 @@ enum tg_index tg_index_with_spread(enum tg_index ix, int spread) {
         spread = spread < 2 ? 2 : spread > 4096 ? 4096 : spread;
         spread--; // ensure range 1-4095 (but will actually be 2-4096)
     }
-    return (ix & 0xF) | (spread << 4);
+    return (enum tg_index) ((ix & 0xF) | (spread << 4));
 }
 
 enum tg_index tg_index_extract_spread(enum tg_index ix, int *spread) {
@@ -592,7 +599,7 @@ enum tg_index tg_index_extract_spread(enum tg_index ix, int *spread) {
     if (spread) {
         *spread = ixspread;
     }
-    return ix & 0xF;
+    return (enum tg_index) (ix & 0xF);
 }
 
 ////////////////////
@@ -7628,7 +7635,7 @@ static struct tg_geom *parse_geojson_point(struct json json, bool req_geom,
             break;
         }
     }
-    PARSE_GEOJSON_BASIC_TAIL()
+    PARSE_GEOJSON_BASIC_TAIL({})
 }
 
 static bool check_parse_posns(enum base base, double *posns, int nposns,
@@ -13411,12 +13418,11 @@ size_t tg_geom_hex(const struct tg_geom *geom, char *dst, size_t n) {
 
 static struct tg_geom *parse_hex(const char *hex, size_t len, enum tg_index ix)
 {
-    const uint8_t _ = 0;
-    static const uint8_t hextoks[256] = { 
-        _,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,
-        _,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,01,2,3,4,5,6,7,8,9,10,_,_,_,_,_,
-        _,_,11,12,13,14,15,16,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,
-        _,_,_,_,_,11,12,13,14,15,16,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,
+    static const uint8_t hextoks[256] = {
+        0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+        0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,01,2,3,4,5,6,7,8,9,10,0,0,0,0,0,
+        0,0,11,12,13,14,15,16,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+        0,0,0,0,0,11,12,13,14,15,16,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
     };
     uint8_t *dst = NULL;
     bool must_free = false;
@@ -13433,7 +13439,7 @@ static struct tg_geom *parse_hex(const char *hex, size_t len, enum tg_index ix)
     for (size_t i = 0; i < len; i += 2) {
         uint8_t b0 = hextoks[(uint8_t)hex[i+0]];
         uint8_t b1 = hextoks[(uint8_t)hex[i+1]];
-        if (b0 == _ || b1 == _) goto invalid;
+        if (b0 == 0 || b1 == 0) goto invalid;
         dst[j] = ((b0-1)<<4)|(b1-1);
         j++;
     }
