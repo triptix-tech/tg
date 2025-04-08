@@ -439,7 +439,7 @@ bool eqish(double a, double b) {
 #define v3 {10, 0}, {5, 10}, {0, 0}
 #define v4 {10, 10}, {0, 5}, {10, 0}
 
-#include "states.h"
+#include "shapes.h"
 
 #ifdef __clang__
 #pragma clang diagnostic ignored "-Wunknown-warning-option"
@@ -452,6 +452,7 @@ bool eqish(double a, double b) {
 #endif
 #pragma GCC diagnostic ignored "-Wextra"
 #pragma GCC diagnostic ignored "-Wunused-variable"
+#pragma GCC diagnostic ignored "-Woverlength-strings"
 
 size_t total_allocs = 0;
 size_t total_mem = 0;
@@ -657,6 +658,34 @@ char *read_file(const char *path, size_t *size) {
     return data;
 }
 
+void cmpfullrect(int dims, double min[4], double max[4], int dims2, double min2[4], double max2[4]) {
+    if (dims != dims2) {
+        printf("expected\n\tdims( %d )\ngot\n\tdims( %d )\n", dims, dims2);
+        assert(0);
+    }
+    for (int i = 0; i < dims; i++) {
+        if (min[i] != min2[i] || max[i] != max2[i]) {
+            printf("expected\n\tmin( ");
+            for (int i = 0; i < dims; i++) {
+                printf("%.0f ", min2[i]);
+            }
+            printf(") max( ");
+            for (int i = 0; i < dims; i++) {
+                printf("%.0f ", max2[i]);
+            }
+            printf(")\ngot\n\tmin( ");
+            for (int i = 0; i < dims; i++) {
+                printf("%.0f ", min[i]);
+            }
+            printf(") max( ");
+            for (int i = 0; i < dims; i++) {
+                printf("%.0f ", max[i]);
+            }
+            printf(")\n");
+            assert(0);
+        }
+    }
+}
 
 static double *make_polygon(int n, double x, double y, double r, double c, double s) {
     s = s < 0.0 ? 0.0 : s > 1.0 ? 1.0 : s;
@@ -740,15 +769,13 @@ struct tg_geom *_load_geom(const char *name, enum tg_index ix, bool flipped) {
         }
         geom = (struct tg_geom*)load_random_ring(npoints, ix);
     } else if (strcmp(name, "br") == 0) {
-        char *br = read_file("br.geojson", 0);
-        assert(br);
-        geom = tg_parse_geojson_ix(br, ix);
-        free(br);
+        struct tg_point points[] = { br };
+        size_t npoints = sizeof(points)/sizeof(struct tg_point);
+        geom = (struct tg_geom *)tg_ring_new_ix(points, npoints, ix);
     } else if (strcmp(name, "bc") == 0) {
-        char *br = read_file("bc.geojson", 0);
-        assert(br);
-        geom = tg_parse_geojson_ix(br, ix);
-        free(br);
+        struct tg_point points[] = { bc };
+        size_t npoints = sizeof(points)/sizeof(struct tg_point);
+        geom = (struct tg_geom *)tg_ring_new_ix(points, npoints, ix);
     } else if (strcmp(name, "az") == 0) {
         struct tg_point points[] = { az };
         size_t npoints = sizeof(points)/sizeof(struct tg_point);
@@ -778,4 +805,7 @@ struct tg_geom *load_geom(const char *name, enum tg_index ix) {
 struct tg_geom *load_geom_flipped(const char *name, enum tg_index ix) {
     return _load_geom(name, ix, true);
 }
+
+#include "relations.h" // Auto generated from "run.sh"
+
 #endif // TESTS_H

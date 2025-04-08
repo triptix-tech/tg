@@ -157,17 +157,17 @@ void test_wkt_basic_syntax() {
     wkt_match_err(" MULTIPOINT ( ( 1  2 ) , 3  4 ) ", "invalid text");
     wkt_match_err(" MULTIPOINT (-.4) ", "each position must have two to four numbers");
     wkt_match_err(" MULTIPOINT (-) ", "invalid text");
-    wkt_match_2(" MULTIPOINT (-.5 000.5e4) ", "MULTIPOINT(-0.5 5000)");
+    wkt_match_2(" MULTIPOINT (-.5 000.5e4) ", "MULTIPOINT(-0.5 5e3)");
     wkt_match_err(" MULTIPOINT (()) ", "invalid text");
     wkt_match_err(" MULTIPOINT ((,)) ", "invalid text");
     wkt_match_err(" MULTIPOINT ((-,)) ", "invalid text");
     wkt_match_2(" MULTIPOINT ((-1 -1)) ", "MULTIPOINT(-1 -1)");
     wkt_match_err(" MULTIPOINT (-1.) ", "invalid text");
     wkt_match_err(" MULTIPOINT (-1.000v) ", "invalid text");
-    wkt_match_2(" MULTIPOINT (1e5 2000e-2) ", "MULTIPOINT(100000 20)");
+    wkt_match_2(" MULTIPOINT (1e5 2000e-2) ", "MULTIPOINT(1e5 20)");
     wkt_match_err(" MULTIPOINT (1e) ", "invalid text");
     wkt_match_err(" MULTIPOINT (1e-) ", "invalid text");
-    wkt_match_2(" MULTIPOINT (500000000000000e-10 1) ", "MULTIPOINT(50000 1)");
+    wkt_match_2(" MULTIPOINT (500000000000000e-10 1) ", "MULTIPOINT(5e4 1)");
 
     wkt_match_2(" MULTIPOINT ( (1 2) , (2 3)) ", "MULTIPOINT(1 2,2 3)");
     wkt_match_err(" MULTIPOINT ( (1 2v ) , (2 3)) ", "invalid text");
@@ -713,8 +713,33 @@ void test_wkt_various() {
     assert(tg_geom_error(geom));
     assert(strcmp(tg_geom_error(geom), "ParseError: missing type") == 0);
     tg_geom_free(geom);
+
+    geom = tg_parse_geojson("{\"type\":\"Feature\",\"geometry\":{\"type\":\"Point\",\"coordinates\":[10,20]},\"properties\":{\"a\":\"b\"}}");
+    char output[100];
+    size_t len = tg_geom_wkt(geom, output, sizeof(output));
+    assert(strcmp(output, "POINT(10 20)") == 0);
+    tg_geom_free(geom);
+
 }
 
+void test_wkt_geometrycollection() {
+    struct tg_geom *g1 = tg_parse_wkt("POLYGON ((30 10, 40 40, 20 40, 10 20, 30 10))");
+    assert(!tg_geom_error(g1));
+    struct tg_geom *g2 = tg_parse_wkt("POLYGON ((300 100, 400 400, 200 400, 100 200, 300 100))");
+    assert(!tg_geom_error(g2));
+    struct tg_geom *collection = tg_geom_new_geometrycollection((const struct tg_geom*const[]) {g1, g2}, 2);
+    assert(!tg_geom_error(collection));
+    char dst1[1024];
+    char dst2[1024];
+    tg_geom_wkt(tg_geom_geometry_at(collection, 1), dst1, sizeof(dst1));
+    struct tg_geom *g3 = tg_parse_wkt(dst1);
+    tg_geom_wkt(g3, dst2, sizeof(dst2));
+    assert(strcmp(dst1, dst2) == 0);
+    tg_geom_free(g1);
+    tg_geom_free(g2);
+    tg_geom_free(collection);
+    tg_geom_free(g3);
+}
 
 int main(int argc, char **argv) {
     seedrand();
@@ -722,5 +747,6 @@ int main(int argc, char **argv) {
     do_test(test_wkt_max_depth);
     do_chaos_test(test_wkt_chaos);
     do_test(test_wkt_various);
+    do_test(test_wkt_geometrycollection);
     return 0;
 }

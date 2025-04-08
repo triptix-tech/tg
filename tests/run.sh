@@ -13,6 +13,8 @@ finish() {
     rm -fr *.profraw
     rm -fr *.dSYM
     rm -fr *.profdata
+    rm -fr *.wasm
+    rm -fr *.js
     if [[ "$OK" != "1" ]]; then
         echo "FAIL"
     fi
@@ -42,13 +44,18 @@ if [[ "$CC" == "" ]]; then
     CC=cc
 fi
 if [[ "$1" != "bench" ]]; then
-    CFLAGS="-O0 -g3 -Wall -Wextra -fstrict-aliasing $CFLAGS"
+    CFLAGS="-O0 -g2 -Wall -Wextra -fstrict-aliasing $CFLAGS"
     CCVERSHEAD="$($CC --version | head -n 1)"
     if [[ "$CCVERSHEAD" == "" ]]; then
         exit 1
     fi
     if [[ "$CCVERSHEAD" == *"clang"* ]]; then
         CLANGVERS="$(echo "$CCVERSHEAD" | awk '{print $4}' | awk -F'[ .]+' '{print $1}')"
+    fi
+
+    if [[ "$CC" == *"zig"* ]]; then
+        # echo Zig does not support asans
+        NOSANS=1
     fi
 
     # Use address sanitizer if possible
@@ -64,32 +71,38 @@ if [[ "$1" != "bench" ]]; then
         CFLAGS="$CFLAGS -fno-inline"
         CFLAGS="$CFLAGS -pedantic"
         WITHSANS=1
-
-        if [[ "$(which llvm-cov-$CLANGVERS)" != "" && "$(which llvm-profdata-$CLANGVERS)" != "" ]]; then
-            LLVM_COV="llvm-cov-$CLANGVERS"
-            LLVM_PROFDATA="llvm-profdata-$CLANGVERS"
-        else
-            LLVM_COV="llvm-cov"
-            LLVM_PROFDATA="llvm-profdata"
+        INSTALLDIR="$($CC --version | grep InstalledDir | cut -d " " -f 2)"
+        if [[ "$INSTALLDIR" != "" ]]; then
+            LLVM_COV="$INSTALLDIR/llvm-cov"
+            LLVM_PROFDATA="$INSTALLDIR/llvm-profdata"
         fi
-
         if [[ "$(which $LLVM_PROFDATA)" != "" && "$(which $LLVM_COV)" != "" ]]; then
             COV_VERS="$($LLVM_COV --version | awk '{print $4}' | awk -F'[ .]+' '{print $1}')"
-            if [[ "$COV_VERS" -gt "15" ]]; then
+            echo $COV_VERS
+            if [[ "$COV_VERS" -gt "14" ]]; then
                 WITHCOV=1
             fi
         fi
     fi
-    CFLAGS=${CFLAGS:-"-O0 -g3 -Wall -Wextra -fstrict-aliasing"}
+    CFLAGS=${CFLAGS:-"-O0 -g2 -Wall -Wextra -fstrict-aliasing"}
 else
     CFLAGS=${CFLAGS:-"-O3"}
 fi
+if [[ "$CC" == "emcc" ]]; then
+    # Running emscripten
+    CFLAGS="$CFLAGS -sASYNCIFY -sALLOW_MEMORY_GROWTH -sSTACK_SIZE=5MB"
+    CFLAGS="$CFLAGS -Wno-limited-postlink-optimizations"
+    CFLAGS="$CFLAGS -Wno-unused-command-line-argument"
+    CFLAGS="$CFLAGS -Wno-pthreads-mem-growth"
+    CFLAGS="$CFLAGS -O3" # needs optimizations for test_wkb_max_depth test
+fi
+
 CC=${CC:-cc}
 echo "CC: $CC"
 echo "CFLAGS: $CFLAGS"
 echo "OS: `uname`"
 echo "CPU: $cpu"
-cc2="$(readlink -f "`which $CC`")"
+cc2="$(readlink -f "`which $CC | true`" | true)"
 if [[ "$cc2" == "" ]]; then
     cc2="$CC"
 fi
@@ -98,6 +111,8 @@ if [[ "$NOSANS" == "1" ]]; then
     echo "Sanitizers disabled"
 fi
 echo "TG Commit: `git rev-parse --short HEAD 2>&1 || true`"
+
+./genrelations.sh
 
 # GEOS - used for benchmarking
 if [[ "$GEOS_BENCH" == "1" ]]; then
@@ -122,6 +137,7 @@ if [[ "$1" == "bench" ]]; then
     fi
     $CC $CFLAGS bmalloc.c ../tg.c bench.c -lm $GEOS_FLAGS
     ./a.out $@
+    OK=1
 elif [[ "$1" == "fuzz" ]]; then
     echo "FUZZING..."
     echo $CC $CFLAGS ../tg.c fuzz.c
@@ -135,8 +151,8 @@ else
     fi
     echo "For benchmarks: 'run.sh bench'"
     echo "TESTING..."
-    DEPS_SRCS="../deps/json.c ../deps/ryu.c"
-    DEPS_OBJS="json.o ryu.o"
+    DEPS_SRCS="../deps/json.c ../deps/fp.c"
+    DEPS_OBJS="json.o fp.o"
     rm -f tg.o $DEPS_OBJS
     for f in *; do 
         if [[ "$f" != test_*.c ]]; then continue; fi 
@@ -152,7 +168,11 @@ else
             if [[ "$f" != $p* ]]; then continue; fi
         fi
         if [[ ! -f "tg.o" ]]; then
-            $CC $CFLAGS -Wunused-function -c $DEPS_SRCS
+            # Compile each dependency individually
+            DEPS_SRCS_ARR=($DEPS_SRCS)
+            for file in "${DEPS_SRCS_ARR[@]}"; do
+                $CC $CFLAGS -Wunused-function -c $file
+            done
             if [[ "$AMALGA" == "1" ]]; then
                 echo "AMALGA=1"
                 $CC $CFLAGS -c ../tg.c 
@@ -173,10 +193,22 @@ else
         fi
         if [[ "$VALGRIND" == "1" ]]; then
             valgrind --leak-check=yes ./$f.test $@
+        elif [[ "$CC" == "emcc" ]]; then
+            node ./$f.test $@
         else
             ./$f.test $@
         fi
     done
+
+    # test that TG_STATIC has no externs
+    externs="$(gcc -DTG_STATIC -c ../tg.c && \
+        nm -g tg.o | grep ' T ' | wc -l | xargs)"
+    if [[ "$externs" != "0" ]]; then
+        echo TG_STATIC returned externs
+        nm -g tg.o | grep ' T '
+        exit
+    fi
+
     OK=1
     echo "OK"
 
@@ -204,5 +236,4 @@ else
         echo "code coverage not a available"
         echo "install llvm-profdata and use clang for coverage"
     fi
-
 fi
